@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Analyzer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="3" width="20" height="14" rx="2"/>
+                    <line x1="8" y1="21" x2="16" y2="21"/>
+                    <line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+                <span>ServerAnalyzer</span>
+            </div>
+            
+            <nav class="nav">
+                <div class="nav-section">
+                    <div class="nav-title">Servers</div>
+                    <div class="server-list" id="serverList">
+                        {% for server_id, server in servers.items() %}
+                        <div class="server-item" data-server="{{ server_id }}">
+                            <span class="server-name">{{ server.name }}</span>
+                            <span class="server-host">{{ server.host }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-title">Views</div>
+                    <button class="nav-btn active" data-view="overview">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/>
+                            <rect x="14" y="3" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                        Overview
+                    </button>
+                    <button class="nav-btn" data-view="processes">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="4" y1="9" x2="20" y2="9"/>
+                            <line x1="4" y1="15" x2="20" y2="15"/>
+                            <line x1="10" y1="3" x2="8" y2="21"/>
+                            <line x1="16" y1="3" x2="14" y2="21"/>
+                        </svg>
+                        Processes
+                    </button>
+                    <button class="nav-btn" data-view="docker">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                        </svg>
+                        Docker
+                    </button>
+                    <button class="nav-btn" data-view="history">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                        History
+                    </button>
+                    <button class="nav-btn" data-view="analysis">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                        Deep Analysis
+                    </button>
+                    <button class="nav-btn" data-view="chat">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                        AI Assistant
+                    </button>
+                    <button class="nav-btn" data-view="actions">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        </svg>
+                        Smart Actions
+                    </button>
+                </div>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="auto-refresh">
+                    <span>Auto-refresh</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="autoRefresh" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="last-update" id="lastUpdate">Last updated: --</div>
+            </div>
+        </aside>
+        
+        <main class="main-content">
+            <header class="header">
+                <div class="header-left">
+                    <h1 id="serverTitle">Select a server</h1>
+                    <span class="status-badge" id="serverStatus">--</span>
+                </div>
+                <button class="btn-primary" onclick="refreshData()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                    Refresh
+                </button>
+            </header>
+            
+            <!-- Overview View -->
+            <div class="view active" id="view-overview">
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="4" y="4" width="16" height="16" rx="2"/>
+                                <rect x="9" y="9" width="6" height="6"/>
+                            </svg>
+                            <span>CPU Usage</span>
+                        </div>
+                        <div class="metric-value" id="cpuValue">-- %</div>
+                        <div class="metric-details">
+                            <span id="cpuCores">-- cores</span>
+                            <span id="loadAvg">Load: --</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                            </svg>
+                            <span>Memory</span>
+                        </div>
+                        <div class="metric-value" id="memValue">-- %</div>
+                        <div class="metric-details">
+                            <span id="memUsed">-- GB</span>
+                            <span id="memTotal">of -- GB</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                            </svg>
+                            <span>Disk</span>
+                        </div>
+                        <div class="metric-value" id="diskValue">-- %</div>
+                        <div class="metric-details">
+                            <span id="diskUsed">-- GB</span>
+                            <span id="diskTotal">of -- GB</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <span>Uptime</span>
+                        </div>
+                        <div class="metric-value" id="uptimeValue">--</div>
+                        <div class="metric-details">
+                            <span id="hostname">--</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <h3 class="section-title">Resource Usage (Last Hour)</h3>
+                <div class="chart-container">
+                    <canvas id="metricsChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Processes View -->
+            <div class="view" id="view-processes">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>PID</th>
+                                <th>CPU %</th>
+                                <th>Memory %</th>
+                                <th>Command</th>
+                            </tr>
+                        </thead>
+                        <tbody id="processTable"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Docker View -->
+            <div class="view" id="view-docker">
+                <div class="docker-summary">
+                    <div class="docker-stat">
+                        <span class="docker-stat-value" id="dockerRunning">0</span>
+                        <span class="docker-stat-label">Running</span>
+                    </div>
+                    <div class="docker-stat">
+                        <span class="docker-stat-value" id="dockerTotal">0</span>
+                        <span class="docker-stat-label">Total</span>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Image</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dockerTable"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- History View -->
+            <div class="view" id="view-history">
+                <div class="chart-container large">
+                    <canvas id="historyChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Deep Analysis View -->
+            <div class="view" id="view-analysis">
+                <div class="view-header">
+                    <h2>Deep Analysis</h2>
+                    <button class="btn-primary" onclick="runDeepAnalysis()">Run Analysis</button>
+                </div>
+                <div class="analysis-grid">
+                    <div class="analysis-panel">
+                        <h3>Disk Usage by Directory</h3>
+                        <pre id="diskAnalysis">Click "Run Analysis" to start...</pre>
+                    </div>
+                    <div class="analysis-panel">
+                        <h3>Docker Disk Usage</h3>
+                        <pre id="dockerAnalysis">Click "Run Analysis" to start...</pre>
+                    </div>
+                    <div class="analysis-panel">
+                        <h3>Large Files</h3>
+                        <pre id="largeFiles">Click "Run Analysis" to start...</pre>
+                    </div>
+                    <div class="analysis-panel">
+                        <h3>Top Memory Processes</h3>
+                        <pre id="memoryAnalysis">Click "Run Analysis" to start...</pre>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- AI Chat View -->
+            <div class="view" id="view-chat">
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="chat-message assistant">
+                            <p>Hello! I'm your server assistant. Ask me anything about your server's health, performance, or recommendations.</p>
+                        </div>
+                        <div class="chat-suggestions">
+                            <button class="suggestion-btn" onclick="askSuggestion('What is using the most memory?')">What's using memory?</button>
+                            <button class="suggestion-btn" onclick="askSuggestion('How can I free up disk space?')">Free up disk space</button>
+                            <button class="suggestion-btn" onclick="askSuggestion('Is my server healthy?')">Health check</button>
+                        </div>
+                    </div>
+                    <div class="chat-input-container">
+                        <input type="text" id="chatInput" placeholder="Ask about your server..." onkeypress="handleChatKeypress(event)">
+                        <button class="btn-send" onclick="sendChatMessage()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"/>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Smart Actions View -->
+            <div class="view" id="view-actions">
+                <div class="view-header">
+                    <h2>Smart Actions</h2>
+                    <button class="btn-primary" onclick="loadSuggestions()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:6px">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                        </svg>
+                        Check for Issues
+                    </button>
+                </div>
+                
+                <div class="suggestions-panel" id="suggestionsPanel">
+                    <div class="suggestion-empty">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:48px;height:48px;opacity:0.3;margin-bottom:16px">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+                            <line x1="9" y1="9" x2="9.01" y2="9"/>
+                            <line x1="15" y1="9" x2="15.01" y2="9"/>
+                        </svg>
+                        <p>Click "Check for Issues" to scan your server</p>
+                    </div>
+                </div>
+                
+                <div class="all-actions-section">
+                    <h3>All Available Actions</h3>
+                    <div class="actions-grid" id="allActionsGrid"></div>
+                </div>
+                
+                <div class="action-modal" id="actionModal">
+                    <div class="action-modal-content">
+                        <div class="action-modal-header">
+                            <h3 id="actionModalTitle">Action Result</h3>
+                            <button class="modal-close" onclick="closeActionModal()">&times;</button>
+                        </div>
+                        <div class="action-modal-body">
+                            <pre id="actionOutput"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="loading-overlay" id="loadingOverlay">
+                <div class="spinner"></div>
+                <span>Connecting to server...</span>
+            </div>
+        </main>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
+
