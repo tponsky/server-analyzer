@@ -321,16 +321,16 @@ function displayStructuredResponse(response, container) {
         html += `<div class="ai-summary"><p>${escapeHtml(response.summary)}</p></div>`;
     }
     
-    // Recommendations
+    // Recommendations - Display as line items with action buttons
     if (response.recommendations && response.recommendations.length > 0) {
-        html += '<div class="ai-recommendations">';
+        html += '<div class="ai-recommendations-list">';
         response.recommendations.forEach((rec, index) => {
             const risk = rec.risk || 'YELLOW';
             const riskClass = risk.toLowerCase();
             const riskColors = {
-                'green': { bg: 'rgba(34, 197, 94, 0.1)', border: '#22c55e', icon: '✓' },
-                'yellow': { bg: 'rgba(234, 179, 8, 0.1)', border: '#eab308', icon: '⚠' },
-                'red': { bg: 'rgba(239, 68, 68, 0.1)', border: '#ef4444', icon: '⚠' }
+                'green': { bg: 'rgba(34, 197, 94, 0.1)', border: '#22c55e', icon: '✓', label: 'SAFE' },
+                'yellow': { bg: 'rgba(234, 179, 8, 0.1)', border: '#eab308', icon: '⚠', label: 'CAUTION' },
+                'red': { bg: 'rgba(239, 68, 68, 0.1)', border: '#ef4444', icon: '⚠', label: 'RISKY' }
             };
             const colors = riskColors[riskClass] || riskColors['yellow'];
             const hasAction = rec.action_id || rec.action;
@@ -339,22 +339,41 @@ function displayStructuredResponse(response, container) {
             // Store recommendation data - use base64 encoding to avoid escaping issues
             const recData = btoa(JSON.stringify(rec));
             
+            // Create clear action description
+            const actionDescription = rec.description || rec.title || 'Execute action';
+            
             html += `
-                <div class="ai-recommendation ${hasAction ? 'clickable' : ''}" 
+                <div class="ai-recommendation-item" 
                      style="border-left: 4px solid ${colors.border}; background: ${colors.bg};"
                      data-rec-id="${recId}"
-                     data-rec-data="${recData}"
-                     ${hasAction ? `onclick="executeRecommendationFromElement(this)"` : ''}>
-                    <div class="ai-rec-header">
-                        <span class="ai-rec-risk" style="color: ${colors.border};">
-                            <strong>${colors.icon} ${risk}</strong>
-                        </span>
-                        <h4>${escapeHtml(rec.title || 'Recommendation')}</h4>
-                        ${hasAction ? '<span class="ai-rec-click-hint">Click to execute →</span>' : ''}
+                     data-rec-data="${recData}">
+                    <div class="ai-rec-item-content">
+                        <div class="ai-rec-item-left">
+                            <span class="ai-rec-risk-badge" style="background: ${colors.border};">
+                                ${colors.icon} ${colors.label}
+                            </span>
+                            <div class="ai-rec-item-text">
+                                <div class="ai-rec-item-title">${escapeHtml(rec.title || 'Recommendation')}</div>
+                                <div class="ai-rec-item-desc">${escapeHtml(actionDescription)}</div>
+                                ${rec.considerations ? `<div class="ai-rec-item-considerations">⚠ ${escapeHtml(rec.considerations)}</div>` : ''}
+                            </div>
+                        </div>
+                        <div class="ai-rec-item-right">
+                            ${hasAction ? `
+                                <button class="ai-rec-action-btn" 
+                                        style="border-color: ${colors.border}; color: ${colors.border};"
+                                        onclick="executeRecommendationFromElement(this.closest('.ai-recommendation-item'))"
+                                        data-rec-id="${recId}">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
+                                        <polygon points="5 3 19 12 5 21 5 3"/>
+                                    </svg>
+                                    Do It
+                                </button>
+                            ` : `
+                                <span class="ai-rec-no-action">Manual step required</span>
+                            `}
+                        </div>
                     </div>
-                    <p class="ai-rec-description">${escapeHtml(rec.description || '')}</p>
-                    ${rec.considerations ? `<div class="ai-rec-considerations"><strong>Things to know:</strong> ${escapeHtml(rec.considerations)}</div>` : ''}
-                    ${rec.action && !rec.action_id ? `<div class="ai-rec-action"><code>${escapeHtml(rec.action)}</code></div>` : ''}
                 </div>
             `;
         });
@@ -405,15 +424,14 @@ async function executeRecommendation(recId, recommendation, recElement = null) {
     }
     if (!recElement) return;
     
-    // Show loading state
-    const originalContent = recElement.innerHTML;
+    // Find the button and show loading state
+    const actionBtn = recElement.querySelector('.ai-rec-action-btn');
+    if (actionBtn) {
+        actionBtn.disabled = true;
+        actionBtn.innerHTML = '<div class="spinner-small"></div> Running...';
+    }
+    
     recElement.classList.add('executing');
-    recElement.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <div class="spinner-small"></div>
-            <span>Executing...</span>
-        </div>
-    `;
     
     try {
         if (recommendation.action_id) {
@@ -425,48 +443,73 @@ async function executeRecommendation(recId, recommendation, recElement = null) {
             
             const result = await response.json();
             
-            // Show result
+            // Show result inline
             recElement.classList.remove('executing');
             recElement.classList.add('executed');
-            recElement.innerHTML = `
-                <div class="ai-rec-header">
-                    <span class="ai-rec-risk" style="color: ${result.success ? '#22c55e' : '#ef4444'};">
-                        <strong>${result.success ? '✓' : '✗'} ${result.success ? 'Completed' : 'Failed'}</strong>
-                    </span>
-                    <h4>${escapeHtml(recommendation.title || 'Recommendation')}</h4>
-                </div>
-                <div class="ai-rec-result">
-                    ${result.success ? 
-                        `<div style="color: #22c55e; margin: 10px 0;"><strong>Success!</strong></div>
-                         ${result.output ? `<pre style="background: rgba(0,0,0,0.1); padding: 10px; border-radius: 4px; font-size: 12px; max-height: 200px; overflow-y: auto;">${escapeHtml(result.output)}</pre>` : ''}` :
-                        `<div style="color: #ef4444; margin: 10px 0;"><strong>Error:</strong> ${escapeHtml(result.error || 'Unknown error')}</div>`
-                    }
+            
+            const resultHtml = `
+                <div class="ai-rec-item-content">
+                    <div class="ai-rec-item-left">
+                        <span class="ai-rec-risk-badge" style="background: ${result.success ? '#22c55e' : '#ef4444'};">
+                            ${result.success ? '✓' : '✗'} ${result.success ? 'DONE' : 'FAILED'}
+                        </span>
+                        <div class="ai-rec-item-text">
+                            <div class="ai-rec-item-title">${escapeHtml(recommendation.title || 'Recommendation')}</div>
+                            <div class="ai-rec-result">
+                                ${result.success ? 
+                                    `<div style="color: #22c55e; margin-top: 8px;"><strong>✓ Success!</strong></div>
+                                     ${result.output ? `<pre style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; font-size: 11px; margin-top: 8px; max-height: 150px; overflow-y: auto; white-space: pre-wrap;">${escapeHtml(result.output)}</pre>` : ''}` :
+                                    `<div style="color: #ef4444; margin-top: 8px;"><strong>✗ Error:</strong> ${escapeHtml(result.error || 'Unknown error')}</div>`
+                                }
+                            </div>
+                        </div>
+                    </div>
                 </div>
             `;
+            
+            recElement.innerHTML = resultHtml;
         } else if (recommendation.action) {
-            // Custom command - would need a new endpoint for custom commands
+            // Custom command - show manual instruction
             recElement.classList.remove('executing');
             recElement.innerHTML = `
-                <div class="ai-rec-header">
-                    <span class="ai-rec-risk" style="color: #eab308;">
-                        <strong>⚠ Manual Action Required</strong>
-                    </span>
-                    <h4>${escapeHtml(recommendation.title || 'Recommendation')}</h4>
+                <div class="ai-rec-item-content">
+                    <div class="ai-rec-item-left">
+                        <span class="ai-rec-risk-badge" style="background: #eab308;">
+                            ⚠ Manual
+                        </span>
+                        <div class="ai-rec-item-text">
+                            <div class="ai-rec-item-title">${escapeHtml(recommendation.title || 'Recommendation')}</div>
+                            <div style="margin-top: 8px; color: var(--text-secondary);">Run this command manually:</div>
+                            <div class="ai-rec-action"><code>${escapeHtml(recommendation.action)}</code></div>
+                        </div>
+                    </div>
                 </div>
-                <p>This action requires manual execution. Command:</p>
-                <div class="ai-rec-action"><code>${escapeHtml(recommendation.action)}</code></div>
             `;
         }
     } catch (error) {
         recElement.classList.remove('executing');
+        const actionBtn = recElement.querySelector('.ai-rec-action-btn');
+        if (actionBtn) {
+            actionBtn.disabled = false;
+            actionBtn.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Do It
+            `;
+        }
         recElement.innerHTML = `
-            <div class="ai-rec-header">
-                <span class="ai-rec-risk" style="color: #ef4444;">
-                    <strong>✗ Error</strong>
-                </span>
-                <h4>${escapeHtml(recommendation.title || 'Recommendation')}</h4>
+            <div class="ai-rec-item-content">
+                <div class="ai-rec-item-left">
+                    <span class="ai-rec-risk-badge" style="background: #ef4444;">
+                        ✗ Error
+                    </span>
+                    <div class="ai-rec-item-text">
+                        <div class="ai-rec-item-title">${escapeHtml(recommendation.title || 'Recommendation')}</div>
+                        <div style="color: #ef4444; margin-top: 8px;">Error: ${escapeHtml(error.message)}</div>
+                    </div>
+                </div>
             </div>
-            <div style="color: #ef4444;">Error: ${escapeHtml(error.message)}</div>
         `;
     }
 }
