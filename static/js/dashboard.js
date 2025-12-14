@@ -70,7 +70,9 @@ function switchView(viewName) {
     });
     
     // Load view-specific data
-    if (viewName === 'processes') {
+    if (viewName === 'overview') {
+        loadAIRecommendations();
+    } else if (viewName === 'processes') {
         loadProcesses();
     } else if (viewName === 'docker') {
         loadDocker();
@@ -94,6 +96,11 @@ async function loadServerData() {
         updateMetrics(metrics);
         updateStatus(metrics.status);
         document.getElementById('lastUpdate').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        
+        // Auto-load AI recommendations on overview screen
+        if (document.getElementById('view-overview').classList.contains('active')) {
+            loadAIRecommendations();
+        }
     } catch (error) {
         console.error('Failed to load metrics:', error);
         updateStatus('offline');
@@ -305,7 +312,9 @@ async function sendChatMessage() {
 }
 
 function displayStructuredResponse(response, container) {
-    let html = '<div class="chat-message assistant">';
+    // Check if this is for chat (append) or overview (replace)
+    const isChat = container.id === 'chatMessages';
+    let html = isChat ? '<div class="chat-message assistant">' : '';
     
     // Summary
     if (response.summary) {
@@ -367,8 +376,12 @@ function displayStructuredResponse(response, container) {
         `;
     }
     
-    html += '</div>';
-    container.innerHTML += html;
+    if (isChat) {
+        html += '</div>';
+        container.innerHTML += html;
+    } else {
+        container.innerHTML = html;
+    }
 }
 
 function executeRecommendationFromElement(element) {
@@ -646,5 +659,96 @@ window.runAction = runAction;
 window.closeActionModal = closeActionModal;
 window.executeRecommendation = executeRecommendation;
 window.executeRecommendationFromElement = executeRecommendationFromElement;
+window.loadAIRecommendations = loadAIRecommendations;
+
+// Load AI Recommendations for Overview Screen
+async function loadAIRecommendations() {
+    if (!currentServer) return;
+    
+    const container = document.getElementById('overviewAIRecommendations');
+    const btn = document.getElementById('refreshAIBtn');
+    
+    if (!container) return;
+    
+    // Show loading state
+    container.innerHTML = `
+        <div class="ai-recommendations-placeholder">
+            <div class="spinner" style="width:30px;height:30px;margin:0 auto 10px"></div>
+            <p>Analyzing server and generating recommendations...</p>
+        </div>
+    `;
+    
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner-small"></div> Analyzing...';
+    }
+    
+    try {
+        // Get current metrics
+        const metrics = await fetchAPI(`/metrics/${currentServer}`);
+        const processes = await fetchAPI(`/processes/${currentServer}`);
+        const docker = await fetchAPI(`/docker/${currentServer}`);
+        
+        const server_data = {
+            metrics: metrics,
+            top_processes: processes.processes?.slice(0, 5) || [],
+            docker: docker
+        };
+        
+        // Generate smart question based on current state
+        let question = "Analyze my server and provide recommendations.";
+        const diskPercent = metrics.disk?.percent || 0;
+        const memPercent = metrics.memory?.percent || 0;
+        const cpuPercent = metrics.cpu?.percent || 0;
+        
+        if (diskPercent > 80) {
+            question = "My disk is getting full. How can I free up space safely?";
+        } else if (memPercent > 80) {
+            question = "My memory usage is high. What's using it and how can I optimize it?";
+        } else if (cpuPercent > 80) {
+            question = "My CPU usage is high. What should I do?";
+        } else {
+            question = "Analyze my server health and provide any recommendations for optimization.";
+        }
+        
+        // Get AI analysis
+        const response = await fetch(`/api/chat/${currentServer}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question })
+        });
+        
+        const data = await response.json();
+        
+        // Display recommendations
+        if (data.response && typeof data.response === 'object' && data.response.summary) {
+            displayStructuredResponse(data.response, container);
+        } else {
+            container.innerHTML = `
+                <div class="ai-recommendations-placeholder">
+                    <p>Unable to generate recommendations. Please try the AI Assistant chat for detailed analysis.</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Failed to load AI recommendations:', error);
+        container.innerHTML = `
+            <div class="ai-recommendations-placeholder">
+                <p style="color: var(--danger);">Error loading recommendations: ${escapeHtml(error.message)}</p>
+            </div>
+        `;
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                Analyze
+            `;
+        }
+    }
+}
 
 

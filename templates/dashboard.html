@@ -180,6 +180,32 @@
                 <div class="chart-container">
                     <canvas id="metricsChart"></canvas>
                 </div>
+                
+                <!-- AI Recommendations Panel -->
+                <div class="ai-recommendations-panel">
+                    <div class="panel-header">
+                        <h3 class="section-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;margin-right:8px">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            </svg>
+                            AI Recommendations
+                        </h3>
+                        <div class="panel-actions">
+                            <button class="btn-secondary" onclick="loadAIRecommendations()" id="refreshAIBtn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
+                                    <polyline points="23 4 23 10 17 10"/>
+                                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                                </svg>
+                                Analyze
+                            </button>
+                        </div>
+                    </div>
+                    <div id="overviewAIRecommendations" class="ai-recommendations-container">
+                        <div class="ai-recommendations-placeholder">
+                            <p>Click "Analyze" to get AI-powered recommendations based on your server's current status.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
             
             <!-- Processes View -->
@@ -337,4 +363,5 @@
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 </html>
+
 
