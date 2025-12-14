@@ -2,7 +2,8 @@
 Server Actions - Execute maintenance tasks on servers
 """
 import paramiko
-from typing import Dict, List
+import subprocess
+from typing import Dict, List, Union
 from datetime import datetime
 
 
@@ -73,8 +74,13 @@ class ServerActions:
         self.password = server_config.get("password")
         self.key_path = server_config.get("key_path")
         self.server_name = server_config["name"]
+        self.is_localhost = self.host in ["localhost", "127.0.0.1", "::1"]
     
-    def _connect(self) -> paramiko.SSHClient:
+    def _connect(self) -> Union[paramiko.SSHClient, None]:
+        """Connect via SSH or return None for localhost"""
+        if self.is_localhost:
+            return None
+        
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         
@@ -100,22 +106,41 @@ class ServerActions:
         action = self.ACTIONS[action_id]
         
         try:
-            client = self._connect()
-            stdin, stdout, stderr = client.exec_command(action["command"], timeout=120)
-            
-            output = stdout.read().decode('utf-8')
-            error = stderr.read().decode('utf-8')
-            exit_code = stdout.channel.recv_exit_status()
-            
-            client.close()
-            
-            return {
-                "success": exit_code == 0,
-                "action": action["name"],
-                "output": output,
-                "error": error if error else None,
-                "timestamp": datetime.utcnow().isoformat()
-            }
+            if self.is_localhost:
+                # Run command directly on localhost
+                result = subprocess.run(
+                    action["command"],
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    check=False
+                )
+                return {
+                    "success": result.returncode == 0,
+                    "action": action["name"],
+                    "output": result.stdout,
+                    "error": result.stderr if result.stderr else None,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            else:
+                # Run command via SSH
+                client = self._connect()
+                stdin, stdout, stderr = client.exec_command(action["command"], timeout=120)
+                
+                output = stdout.read().decode('utf-8')
+                error = stderr.read().decode('utf-8')
+                exit_code = stdout.channel.recv_exit_status()
+                
+                client.close()
+                
+                return {
+                    "success": exit_code == 0,
+                    "action": action["name"],
+                    "output": output,
+                    "error": error if error else None,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
         except Exception as e:
             return {
                 "success": False,
@@ -184,4 +209,5 @@ class ServerActions:
             }
             for action_id, action in cls.ACTIONS.items()
         ]
+
 

@@ -1,5 +1,6 @@
 import paramiko
-from typing import Dict, Any
+import subprocess
+from typing import Dict, Any, Union
 
 class DetailedAnalyzer:
     def __init__(self, server_config: Dict):
@@ -8,8 +9,13 @@ class DetailedAnalyzer:
         self.username = server_config["username"]
         self.password = server_config.get("password")
         self.key_path = server_config.get("key_path")
+        self.is_localhost = self.host in ["localhost", "127.0.0.1", "::1"]
     
-    def _connect(self) -> paramiko.SSHClient:
+    def _connect(self) -> Union[paramiko.SSHClient, None]:
+        """Connect via SSH or return None for localhost"""
+        if self.is_localhost:
+            return None
+        
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         
@@ -28,9 +34,26 @@ class DetailedAnalyzer:
         client.connect(**connect_kwargs)
         return client
     
-    def _run_command(self, client: paramiko.SSHClient, command: str) -> str:
-        stdin, stdout, stderr = client.exec_command(command, timeout=60)
-        return stdout.read().decode('utf-8').strip()
+    def _run_command(self, client: Union[paramiko.SSHClient, None], command: str) -> str:
+        """Run command via SSH or locally via subprocess"""
+        if self.is_localhost:
+            try:
+                result = subprocess.run(
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False
+                )
+                return result.stdout.strip()
+            except subprocess.TimeoutExpired:
+                return ""
+            except Exception as e:
+                return f"Error: {str(e)}"
+        else:
+            stdin, stdout, stderr = client.exec_command(command, timeout=60)
+            return stdout.read().decode('utf-8').strip()
     
     def analyze(self) -> Dict[str, Any]:
         try:
@@ -51,7 +74,8 @@ class DetailedAnalyzer:
             memory_procs = self._run_command(client,
                 "ps aux --sort=-%mem | head -10")
             
-            client.close()
+            if client:
+                client.close()
             
             return {
                 "disk_by_directory": disk_by_dir,
@@ -61,4 +85,5 @@ class DetailedAnalyzer:
             }
         except Exception as e:
             return {"error": str(e)}
+
 
