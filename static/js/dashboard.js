@@ -287,11 +287,174 @@ async function sendChatMessage() {
         const data = await response.json();
         
         document.getElementById('typingIndicator').remove();
-        messagesDiv.innerHTML += `<div class="chat-message assistant"><p>${escapeHtml(data.response || data.error)}</p></div>`;
+        
+        // Check if response is structured (new format) or plain text (old format)
+        if (data.response && typeof data.response === 'object' && data.response.summary) {
+            displayStructuredResponse(data.response, messagesDiv);
+        } else {
+            // Fallback to plain text
+            messagesDiv.innerHTML += `<div class="chat-message assistant"><p>${escapeHtml(data.response || data.error || 'No response')}</p></div>`;
+        }
+        
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     } catch (error) {
         document.getElementById('typingIndicator').remove();
         messagesDiv.innerHTML += `<div class="chat-message assistant"><p>Error: ${error.message}</p></div>`;
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+}
+
+function displayStructuredResponse(response, container) {
+    let html = '<div class="chat-message assistant">';
+    
+    // Summary
+    if (response.summary) {
+        html += `<div class="ai-summary"><p>${escapeHtml(response.summary)}</p></div>`;
+    }
+    
+    // Recommendations
+    if (response.recommendations && response.recommendations.length > 0) {
+        html += '<div class="ai-recommendations">';
+        response.recommendations.forEach((rec, index) => {
+            const risk = rec.risk || 'YELLOW';
+            const riskClass = risk.toLowerCase();
+            const riskColors = {
+                'green': { bg: 'rgba(34, 197, 94, 0.1)', border: '#22c55e', icon: '✓' },
+                'yellow': { bg: 'rgba(234, 179, 8, 0.1)', border: '#eab308', icon: '⚠' },
+                'red': { bg: 'rgba(239, 68, 68, 0.1)', border: '#ef4444', icon: '⚠' }
+            };
+            const colors = riskColors[riskClass] || riskColors['yellow'];
+            const hasAction = rec.action_id || rec.action;
+            const recId = `rec-${Date.now()}-${index}`;
+            
+            // Store recommendation data - use base64 encoding to avoid escaping issues
+            const recData = btoa(JSON.stringify(rec));
+            
+            html += `
+                <div class="ai-recommendation ${hasAction ? 'clickable' : ''}" 
+                     style="border-left: 4px solid ${colors.border}; background: ${colors.bg};"
+                     data-rec-id="${recId}"
+                     data-rec-data="${recData}"
+                     ${hasAction ? `onclick="executeRecommendationFromElement(this)"` : ''}>
+                    <div class="ai-rec-header">
+                        <span class="ai-rec-risk" style="color: ${colors.border};">
+                            <strong>${colors.icon} ${risk}</strong>
+                        </span>
+                        <h4>${escapeHtml(rec.title || 'Recommendation')}</h4>
+                        ${hasAction ? '<span class="ai-rec-click-hint">Click to execute →</span>' : ''}
+                    </div>
+                    <p class="ai-rec-description">${escapeHtml(rec.description || '')}</p>
+                    ${rec.considerations ? `<div class="ai-rec-considerations"><strong>Things to know:</strong> ${escapeHtml(rec.considerations)}</div>` : ''}
+                    ${rec.action && !rec.action_id ? `<div class="ai-rec-action"><code>${escapeHtml(rec.action)}</code></div>` : ''}
+                </div>
+            `;
+        });
+        html += '</div>';
+    }
+    
+    // Upgrade suggestion
+    if (response.upgrade_suggestion && response.upgrade_suggestion.needed) {
+        html += `
+            <div class="ai-upgrade-suggestion">
+                <div class="ai-upgrade-header">
+                    <span class="ai-upgrade-icon">💻</span>
+                    <h4>Consider Upgrading Your Server</h4>
+                </div>
+                <p><strong>Why:</strong> ${escapeHtml(response.upgrade_suggestion.reason || '')}</p>
+                ${response.upgrade_suggestion.current_specs ? `<p><strong>Current:</strong> ${escapeHtml(response.upgrade_suggestion.current_specs)}</p>` : ''}
+                ${response.upgrade_suggestion.recommended ? `<p><strong>Recommended:</strong> ${escapeHtml(response.upgrade_suggestion.recommended)}</p>` : ''}
+            </div>
+        `;
+    }
+    
+    html += '</div>';
+    container.innerHTML += html;
+}
+
+function executeRecommendationFromElement(element) {
+    const recData = element.getAttribute('data-rec-data');
+    if (!recData) return;
+    
+    try {
+        const recommendation = JSON.parse(atob(recData));
+        const recId = element.getAttribute('data-rec-id');
+        executeRecommendation(recId, recommendation, element);
+    } catch (e) {
+        console.error('Failed to parse recommendation data:', e);
+    }
+}
+
+async function executeRecommendation(recId, recommendation, recElement = null) {
+    if (!currentServer) return;
+    
+    if (!recElement) {
+        recElement = document.querySelector(`[data-rec-id="${recId}"]`);
+    }
+    if (!recElement) return;
+    
+    // Show loading state
+    const originalContent = recElement.innerHTML;
+    recElement.classList.add('executing');
+    recElement.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="spinner-small"></div>
+            <span>Executing...</span>
+        </div>
+    `;
+    
+    try {
+        if (recommendation.action_id) {
+            // Use existing action
+            const response = await fetch(`/api/actions/${currentServer}/${recommendation.action_id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const result = await response.json();
+            
+            // Show result
+            recElement.classList.remove('executing');
+            recElement.classList.add('executed');
+            recElement.innerHTML = `
+                <div class="ai-rec-header">
+                    <span class="ai-rec-risk" style="color: ${result.success ? '#22c55e' : '#ef4444'};">
+                        <strong>${result.success ? '✓' : '✗'} ${result.success ? 'Completed' : 'Failed'}</strong>
+                    </span>
+                    <h4>${escapeHtml(recommendation.title || 'Recommendation')}</h4>
+                </div>
+                <div class="ai-rec-result">
+                    ${result.success ? 
+                        `<div style="color: #22c55e; margin: 10px 0;"><strong>Success!</strong></div>
+                         ${result.output ? `<pre style="background: rgba(0,0,0,0.1); padding: 10px; border-radius: 4px; font-size: 12px; max-height: 200px; overflow-y: auto;">${escapeHtml(result.output)}</pre>` : ''}` :
+                        `<div style="color: #ef4444; margin: 10px 0;"><strong>Error:</strong> ${escapeHtml(result.error || 'Unknown error')}</div>`
+                    }
+                </div>
+            `;
+        } else if (recommendation.action) {
+            // Custom command - would need a new endpoint for custom commands
+            recElement.classList.remove('executing');
+            recElement.innerHTML = `
+                <div class="ai-rec-header">
+                    <span class="ai-rec-risk" style="color: #eab308;">
+                        <strong>⚠ Manual Action Required</strong>
+                    </span>
+                    <h4>${escapeHtml(recommendation.title || 'Recommendation')}</h4>
+                </div>
+                <p>This action requires manual execution. Command:</p>
+                <div class="ai-rec-action"><code>${escapeHtml(recommendation.action)}</code></div>
+            `;
+        }
+    } catch (error) {
+        recElement.classList.remove('executing');
+        recElement.innerHTML = `
+            <div class="ai-rec-header">
+                <span class="ai-rec-risk" style="color: #ef4444;">
+                    <strong>✗ Error</strong>
+                </span>
+                <h4>${escapeHtml(recommendation.title || 'Recommendation')}</h4>
+            </div>
+            <div style="color: #ef4444;">Error: ${escapeHtml(error.message)}</div>
+        `;
     }
 }
 
@@ -481,4 +644,7 @@ window.loadSuggestions = loadSuggestions;
 window.loadAllActions = loadAllActions;
 window.runAction = runAction;
 window.closeActionModal = closeActionModal;
+window.executeRecommendation = executeRecommendation;
+window.executeRecommendationFromElement = executeRecommendationFromElement;
+
 
