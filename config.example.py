@@ -35,3 +35,5 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "your_openai_api_key")
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
 
+
+

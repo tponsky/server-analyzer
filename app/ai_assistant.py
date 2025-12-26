@@ -96,11 +96,82 @@ Provide recommendations in the JSON format specified. Be helpful and clear for n
                 "upgrade_suggestion": {"needed": False}
             }
         except Exception as e:
-            return {
-                "summary": f"Error: {str(e)}",
-                "recommendations": [],
-                "upgrade_suggestion": {"needed": False}
-            }
+            # Check if it's an OpenAI API error
+            error_str = str(e)
+            
+            # Extract error code from the error message or object
+            error_code = None
+            if hasattr(e, 'status_code'):
+                error_code = e.status_code
+            elif hasattr(e, 'code'):
+                error_code = e.code
+            elif '429' in error_str:
+                error_code = 429
+            elif '401' in error_str:
+                error_code = 401
+            
+            # Handle 429 errors (rate limit or quota) - most common issue with credits available
+            if error_code == 429 or "429" in error_str or "insufficient_quota" in error_str.lower() or "quota" in error_str.lower() or "rate_limit" in error_str.lower():
+                return {
+                    "summary": "⚠️ OpenAI API Rate Limit or Quota Issue",
+                    "recommendations": [
+                        {
+                            "title": "Check Monthly Spending Limits (Most Likely Cause)",
+                            "description": "Even with $57 in credits, you may have hit a monthly spending limit. This is separate from your credit balance and is the most common cause of this error.",
+                            "risk": "YELLOW",
+                            "considerations": "Go to OpenAI Platform → Settings → Limits to check or increase your monthly spending limit. Monthly limits can block requests even when you have credits.",
+                            "action_id": "",
+                            "action": "Visit https://platform.openai.com/settings/organization/limits"
+                        },
+                        {
+                            "title": "Wait and Retry (Rate Limiting)",
+                            "description": "If this is a rate limit (too many requests per minute), wait a few minutes and try again.",
+                            "risk": "GREEN",
+                            "considerations": "Rate limits reset after a short period. Try again in 1-2 minutes.",
+                            "action_id": "",
+                            "action": "Wait 1-2 minutes and refresh the page"
+                        },
+                        {
+                            "title": "Verify API Key Organization",
+                            "description": "Make sure the API key belongs to the same organization/account where you see the $57 credits.",
+                            "risk": "YELLOW",
+                            "considerations": "API keys are organization-specific. If the key is from a different org, it won't use those credits.",
+                            "action_id": "",
+                            "action": "Check API key at https://platform.openai.com/api-keys"
+                        }
+                    ],
+                    "upgrade_suggestion": {"needed": False}
+                }
+            elif error_code == 401 or "401" in error_str or "invalid_api_key" in error_str.lower():
+                return {
+                    "summary": "⚠️ Invalid OpenAI API Key",
+                    "recommendations": [
+                        {
+                            "title": "Check API Key Configuration",
+                            "description": "The OpenAI API key is missing or invalid. Please verify it's correctly set in your server configuration.",
+                            "risk": "YELLOW",
+                            "considerations": "Make sure OPENAI_API_KEY environment variable is set correctly on the server.",
+                            "action_id": "",
+                            "action": "Verify OPENAI_API_KEY is set in systemd service file"
+                        }
+                    ],
+                    "upgrade_suggestion": {"needed": False}
+                }
+            else:
+                return {
+                    "summary": f"⚠️ OpenAI API Error (Code: {error_code or 'Unknown'})",
+                    "recommendations": [
+                        {
+                            "title": "Check Error Details",
+                            "description": f"OpenAI API returned an error: {error_str[:200]}",
+                            "risk": "YELLOW",
+                            "considerations": "This may be a temporary issue. Try again in a few minutes.",
+                            "action_id": "",
+                            "action": "Retry the request or check server logs"
+                        }
+                    ],
+                    "upgrade_suggestion": {"needed": False}
+                }
     
     def get_quick_insights(self, server_data: Dict) -> List[str]:
         insights = []

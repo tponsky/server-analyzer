@@ -67,3 +67,5 @@ ssh -i ~/Desktop/Cursor\ Projects/AWS/EmpowerAI.pem ec2-user@3.14.156.143 "sudo 
 ### Server Credentials
 - See `/Users/toddponskymd/Desktop/Cursor Projects/Credentials/Vibe Coding Credentials.rtf`
 
+
+
